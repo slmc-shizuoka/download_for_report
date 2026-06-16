@@ -1,4 +1,4 @@
-const CACHE = 'bulk-export-v1';
+const CACHE = 'bulk-export-v2';
 const ASSETS = [
   './',
   './index.html',
