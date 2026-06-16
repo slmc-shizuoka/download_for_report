@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#111111">
+<title>BULK EXPORT — スプレッドシート一括取得</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<style>
+  :root{
+    --ink:#111111;
+    --paper:#f3f0e9;
+    --accent:#c8462e;
+    --line:#111111;
+    --muted:#6b665c;
+    --ok:#1f6b3a;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  html,body{background:var(--paper);color:var(--ink);font-family:"Helvetica Neue",Arial,"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;-webkit-font-smoothing:antialiased;}
+  body{min-height:100vh;display:flex;justify-content:center;padding:clamp(16px,4vw,48px);}
+  .wrap{width:100%;max-width:840px;}
+
+  /* ===== header ===== */
+  header{border-bottom:3px solid var(--line);padding-bottom:18px;margin-bottom:4px;}
+  .eyebrow{font-size:11px;letter-spacing:.42em;text-transform:uppercase;color:var(--muted);font-weight:700;}
+  h1{font-size:clamp(38px,9vw,76px);line-height:.92;letter-spacing:-.02em;font-weight:800;margin-top:10px;}
+  h1 .it{font-style:italic;font-weight:400;font-family:Georgia,"Times New Roman",serif;}
+  .lede{margin-top:16px;font-size:14px;line-height:1.7;color:var(--muted);max-width:54ch;}
+
+  /* ===== controls bar ===== */
+  .bar{display:flex;flex-wrap:wrap;align-items:center;gap:14px;border-bottom:1px solid var(--line);padding:18px 0;}
+  .count{font-family:Georgia,serif;font-size:46px;line-height:1;letter-spacing:-.02em;}
+  .count small{font-size:12px;font-family:inherit;letter-spacing:.2em;color:var(--muted);display:block;margin-top:4px;font-weight:700;text-transform:uppercase;}
+  .spacer{flex:1;}
+  .fmt{font-size:12px;letter-spacing:.2em;font-weight:700;text-transform:uppercase;border:1px solid var(--line);padding:8px 12px;}
+
+  .run{appearance:none;border:none;cursor:pointer;background:var(--ink);color:var(--paper);
+    font-size:14px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;
+    padding:18px 26px;display:inline-flex;align-items:center;gap:14px;transition:transform .12s ease,background .2s;}
+  .run:hover{background:var(--accent);}
+  .run:active{transform:translateY(1px);}
+  .run:disabled{background:var(--muted);cursor:not-allowed;}
+  .run .arrow{font-family:Georgia,serif;font-size:20px;font-style:italic;}
+
+  /* ===== list ===== */
+  ol{list-style:none;margin-top:6px;}
+  li.row{display:grid;grid-template-columns:42px 1fr auto;gap:16px;align-items:center;
+    padding:16px 0;border-bottom:1px solid rgba(17,17,17,.18);}
+  .idx{font-family:Georgia,serif;font-style:italic;font-size:18px;color:var(--muted);}
+  .meta .grp{font-size:10px;letter-spacing:.24em;font-weight:700;text-transform:uppercase;color:var(--accent);}
+  .meta .name{font-size:16px;font-weight:600;line-height:1.35;margin-top:3px;}
+  .state{font-size:11px;letter-spacing:.18em;font-weight:700;text-transform:uppercase;color:var(--muted);white-space:nowrap;}
+  .state.queued{color:var(--muted);}
+  .state.going{color:var(--accent);}
+  .state.done{color:var(--ok);}
+  li.row.going{background:rgba(200,70,46,.06);}
+
+  /* progress line */
+  .track{height:3px;background:rgba(17,17,17,.12);margin-top:20px;overflow:hidden;}
+  .track i{display:block;height:100%;width:0;background:var(--accent);transition:width .35s ease;}
+
+  /* ===== notes ===== */
+  .notes{margin-top:34px;border-top:3px solid var(--line);padding-top:20px;display:grid;grid-template-columns:1fr 1fr;gap:24px;}
+  .notes h3{font-size:11px;letter-spacing:.24em;text-transform:uppercase;margin-bottom:10px;}
+  .notes p{font-size:12.5px;line-height:1.75;color:var(--muted);}
+  @media(max-width:560px){
+    .notes{grid-template-columns:1fr;}
+    .bar{gap:10px;}
+    .run{width:100%;justify-content:center;}
+    li.row{grid-template-columns:30px 1fr;}
+    .state{grid-column:2;justify-self:start;margin-top:4px;}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="eyebrow">PC Depot — West Area · Data Ops</div>
+    <h1>Bulk<br><span class="it">Export</span></h1>
+    <p class="lede">共有スプレッドシートを Excel(.xlsx) 形式で順次ダウンロードします。Googleにログイン済みのブラウザで実行してください。各ファイルは数秒間隔で取得されます。</p>
+  </header>
+
+  <div class="bar">
+    <div class="count"><span id="total">0</span><small>files</small></div>
+    <div class="spacer"></div>
+    <div class="fmt">XLSX</div>
+    <button class="run" id="run">一括ダウンロード <span class="arrow">→</span></button>
+  </div>
+
+  <div class="track"><i id="trackBar"></i></div>
+
+  <ol id="list"></ol>
+
+  <div class="notes">
+    <div>
+      <h3>動作の仕組み</h3>
+      <p>各シートの export?format=xlsx を順番に呼び出し、ブラウザの標準ダウンロードを発火させます。同時実行はブラウザにブロックされるため、約2.5秒の間隔を空けています。</p>
+    </div>
+    <div>
+      <h3>うまくいかない時</h3>
+      <p>ダウンロードが始まらない場合、Googleにログインしていないか、該当ファイルへの閲覧権限がない可能性があります。ブラウザの「複数ファイルの自動ダウンロード」許可も確認してください。</p>
+    </div>
+  </div>
+</div>
+
+<script>
+// === スプレッドシート定義（添付リンクから抽出した有効なID 8件） ===
+const SHEETS = [
+  { grp:"01 PL",        name:"2026年度PL実績",                 id:"1_McgkDY4WLqfDV5lriI87ivSaMmMppu0" },
+  { grp:"02 KPI",       name:"Branch継続条件進捗 (KPI)",        id:"1fWbZIdf4omBcRaYP3Yd_BNtcNp_sPM2YmijdCEZSFbU" },
+  { grp:"02 KPI",       name:"アカデミアモデル要件",            id:"1aDr5OjTrRNGukMQ-Ozyqz2rE2TAOyjMczrrwzdGaYBM" },
+  { grp:"04 プランナー", name:"5スタ取得状況",                  id:"1UjsE3RB1-Kw0wgbo0TdQwk-53hs_Wtzw" },
+  { grp:"04 プランナー", name:"2026年度プランナー実績",         id:"1sh-R6We8sbefqQqKQBPcc6tCB9raUilQ" },
+  { grp:"04 プランナー", name:"DLP資格取得状況",                id:"1GyQGWtygBsC6FwwDJjMR6n103S68U7gI" },
+  { grp:"04 プランナー", name:"プランナークラス状況",           id:"1E_-M5pHSIMGHdp9g-zsqO0nCwaGPN7BK" },
+  { grp:"05 AO校",      name:"2026年度SMARTLIFE AO校生徒数",    id:"1q17bknDlPN4o9x0YuZftP4TIVsu0DURDX9Y2VuI2KmA" },
+  { grp:"05 AO校",      name:"AO生推移",                        id:"1QYV1W5Va7Seh9JIwkZ-GbCMtwnVFLCHV" },
+];
+
+const exportUrl = id => `https://docs.google.com/spreadsheets/d/${id}/export?format=xlsx`;
+const GAP = 2500; // ms
+
+const listEl = document.getElementById('list');
+const totalEl = document.getElementById('total');
+const runBtn = document.getElementById('run');
+const trackBar = document.getElementById('trackBar');
+
+totalEl.textContent = String(SHEETS.length).padStart(2,'0');
+
+SHEETS.forEach((s,i)=>{
+  const li = document.createElement('li');
+  li.className='row';
+  li.id='row-'+i;
+  li.innerHTML = `
+    <div class="idx">${String(i+1).padStart(2,'0')}</div>
+    <div class="meta"><div class="grp">${s.grp}</div><div class="name">${s.name}</div></div>
+    <div class="state queued" id="st-${i}">待機</div>`;
+  listEl.appendChild(li);
+});
+
+function trigger(url){
+  const a=document.createElement('a');
+  a.href=url; a.download=''; a.rel='noopener';
+  document.body.appendChild(a); a.click(); a.remove();
+}
+const wait = ms => new Promise(r=>setTimeout(r,ms));
+
+async function runAll(){
+  runBtn.disabled=true;
+  runBtn.innerHTML='取得中…';
+  for(let i=0;i<SHEETS.length;i++){
+    const row=document.getElementById('row-'+i);
+    const st=document.getElementById('st-'+i);
+    row.classList.add('going'); st.className='state going'; st.textContent='取得中';
+    trigger(exportUrl(SHEETS[i].id));
+    await wait(GAP);
+    row.classList.remove('going'); st.className='state done'; st.textContent='完了 ✓';
+    trackBar.style.width = (((i+1)/SHEETS.length)*100)+'%';
+  }
+  runBtn.innerHTML='完了しました';
+}
+runBtn.addEventListener('click',runAll);
+
+// PWA
+if('serviceWorker' in navigator){
+  window.addEventListener('load',()=>navigator.serviceWorker.register('service-worker.js').catch(()=>{}));
+}
+</script>
+</body>
+</html>
